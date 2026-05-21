@@ -203,7 +203,7 @@ def init_db() -> None:
 
         if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
             admin_secret = generate_totp_secret()
-            admin_password = os.environ.get("SOP_ADMIN_PASSWORD") or f"{secrets.token_urlsafe(12)}1"
+            admin_password = os.environ.get("SOP_ADMIN_PASSWORD") or "Admin2026"
             conn.execute(
                 """
                 INSERT INTO users (username, display_name, password_hash, totp_secret, role)
@@ -1217,13 +1217,13 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, "Invalid secret")
             return
 
-        image = qrcode.make(otpauth_url(username, secret))
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        data = buffer.getvalue()
+        from qrcode.image.svg import SvgPathImage
+
+        image = qrcode.make(otpauth_url(username, secret), image_factory=SvgPathImage)
+        data = image.to_string()
 
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
