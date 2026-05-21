@@ -1,0 +1,8 @@
+data/
+__pycache__/
+*.pyc
+.DS_Store
+*.png
+work-task-plan.html
+
+generate_google_auth_qr.py
