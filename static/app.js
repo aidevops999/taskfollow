@@ -338,6 +338,30 @@ function reminderStatusText(reminder) {
   return `${reminder.remind_at} 开始提醒`;
 }
 
+function reminderTelegramText(reminder) {
+  const lines = [
+    `提醒备忘：${reminder.title}`,
+    `状态：${reminderStatusText(reminder)}`,
+    `截止时间：${reminder.due_at}`,
+    `提醒日：${reminder.remind_at}`,
+  ];
+  if (reminder.note) lines.push(`备注：${reminder.note}`);
+  if (reminder.task_id) {
+    const taskStatus = reminder.linked_task_status ? (statusLabel[reminder.linked_task_status] || reminder.linked_task_status) : "任务未找到";
+    lines.push(`关联任务：#${reminder.task_id} ${taskStatus}`);
+    if (reminder.linked_task_title) lines.push(`任务标题：${reminder.linked_task_title}`);
+  }
+  lines.push("请及时跟进处理。");
+  return lines.join("\n");
+}
+
+function shareReminderToTelegram(reminderId) {
+  const reminder = state.reminders.find((item) => String(item.id) === String(reminderId));
+  if (!reminder) return;
+  const url = `https://t.me/share/url?text=${encodeURIComponent(reminderTelegramText(reminder))}`;
+  window.open(url, "_blank", "noopener");
+}
+
 function reminderCounts() {
   return {
     all: state.reminders.length,
@@ -408,6 +432,7 @@ function renderReminders() {
         </div>
       </div>
       <div class="task-actions">
+        <button data-reminder-action="telegram" data-id="${reminder.id}">发到纸飞机</button>
         ${!reminder.task_id && reminder.status !== "done" ? `<button data-reminder-action="task" data-id="${reminder.id}">转为任务</button>` : ""}
         ${reminder.status !== "done" ? `<button data-reminder-action="done" data-id="${reminder.id}">完成</button>` : `<button data-reminder-action="open" data-id="${reminder.id}">重新打开</button>`}
         <button data-reminder-action="delete" data-id="${reminder.id}">删除</button>
@@ -1438,6 +1463,10 @@ document.querySelector("#reminderList").addEventListener("click", async (event) 
     if (button.dataset.reminderAction === "delete") {
       data = await api.deleteReminder(button.dataset.id);
       showToast("提醒已删除");
+    } else if (button.dataset.reminderAction === "telegram") {
+      shareReminderToTelegram(button.dataset.id);
+      showToast("已打开纸飞机分享");
+      return;
     } else if (button.dataset.reminderAction === "task") {
       openReminderTaskDialog(button.dataset.id);
       return;
