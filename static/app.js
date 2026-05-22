@@ -74,6 +74,14 @@ function nextMonthSameDay(dateText) {
   return local.toISOString().slice(0, 10);
 }
 
+function nextWeekSameDay(dateText) {
+  const source = dateText || todayISO();
+  const [year, month, day] = source.split("-").map(Number);
+  const nextDate = new Date(year, month - 1, day + 7);
+  const local = new Date(nextDate.getTime() - nextDate.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 function setDateLimits() {
   const minDate = todayISO();
   document.querySelectorAll('input[type="date"]').forEach((input) => {
@@ -613,8 +621,14 @@ function taskActionHint(task) {
 }
 
 function rolloverButton(task) {
-  if (task.task_type !== "month" || task.status === "done") return "";
-  return `<button data-action="rollover-month" data-id="${task.id}">顺延下月</button>`;
+  if (task.status === "done") return "";
+  if (task.task_type === "week") {
+    return `<button data-action="rollover-week" data-id="${task.id}">顺延下周</button>`;
+  }
+  if (task.task_type === "month") {
+    return `<button data-action="rollover-month" data-id="${task.id}">顺延下月</button>`;
+  }
+  return "";
 }
 
 function noteBlock(title, value, extraClass = "") {
@@ -1129,14 +1143,15 @@ document.querySelector("#taskList").addEventListener("click", async (event) => {
     } else if (button.dataset.action === "edit") {
       openProgressDialog(button.dataset.id);
       return;
-    } else if (button.dataset.action === "rollover-month") {
+    } else if (button.dataset.action === "rollover-week" || button.dataset.action === "rollover-month") {
       const task = state.tasks.find((item) => String(item.id) === String(button.dataset.id));
       if (!task) return;
-      const nextDueAt = nextMonthSameDay(task.due_at);
+      const isWeekRollover = button.dataset.action === "rollover-week";
+      const nextDueAt = isWeekRollover ? nextWeekSameDay(task.due_at) : nextMonthSameDay(task.due_at);
       await api.updateTask(button.dataset.id, {
         due_at: nextDueAt,
         status: task.status === "todo" ? "todo" : "doing",
-        delay_reason: task.delay_reason || "本月未完成，顺延到下个月继续处理。",
+        delay_reason: task.delay_reason || (isWeekRollover ? "本周未完成，顺延到下周继续处理。" : "本月未完成，顺延到下个月继续处理。"),
       });
       showToast(`已顺延到 ${nextDueAt}`);
     } else if (button.dataset.action === "delete") {
