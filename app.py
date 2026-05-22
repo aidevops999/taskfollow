@@ -965,12 +965,19 @@ class AppHandler(BaseHTTPRequestHandler):
         with get_connection() as conn:
             rows = conn.execute(
                 """
-                SELECT * FROM reminders
-                WHERE user_id = ?
+                SELECT
+                  reminders.*,
+                  tasks.title AS linked_task_title,
+                  tasks.status AS linked_task_status,
+                  tasks.task_type AS linked_task_type,
+                  tasks.due_at AS linked_task_due_at
+                FROM reminders
+                LEFT JOIN tasks ON tasks.id = reminders.task_id
+                WHERE reminders.user_id = ?
                 ORDER BY
-                  CASE status WHEN 'open' THEN 0 ELSE 1 END,
-                  due_at ASC,
-                  updated_at DESC
+                  CASE reminders.status WHEN 'open' THEN 0 ELSE 1 END,
+                  reminders.due_at ASC,
+                  reminders.updated_at DESC
                 """,
                 (user_id,),
             ).fetchall()

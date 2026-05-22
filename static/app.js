@@ -315,7 +315,7 @@ function renderTodayBoard() {
   const delayed = state.tasks.filter((task) => task.is_delayed && task.status !== "done").length;
   const weekOpen = state.tasks.filter(isThisWeek).length;
   const urgentReminders = state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue)).length;
-  const convertedOpen = state.reminders.filter((item) => item.task_id && item.status === "open").length;
+  const convertedOpen = state.reminders.filter((item) => item.task_id && item.linked_task_status !== "done").length;
   board.innerHTML = `
     <button type="button" data-today-scope="delayed"><b>${delayed}</b><span>延期待处理</span></button>
     <button type="button" data-today-scope="week"><b>${weekOpen}</b><span>本周未完成</span></button>
@@ -343,7 +343,7 @@ function reminderCounts() {
     all: state.reminders.length,
     open: state.reminders.filter((item) => item.status === "open").length,
     attention: state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue)).length,
-    converted: state.reminders.filter((item) => item.task_id && item.status === "open").length,
+    converted: state.reminders.filter((item) => item.task_id && item.linked_task_status !== "done").length,
     done: state.reminders.filter((item) => item.status === "done").length,
   };
 }
@@ -351,7 +351,7 @@ function reminderCounts() {
 function filteredReminders() {
   if (state.reminderFilter === "open") return state.reminders.filter((item) => item.status === "open");
   if (state.reminderFilter === "attention") return state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue));
-  if (state.reminderFilter === "converted") return state.reminders.filter((item) => item.task_id && item.status === "open");
+  if (state.reminderFilter === "converted") return state.reminders.filter((item) => item.task_id && item.linked_task_status !== "done");
   if (state.reminderFilter === "done") return state.reminders.filter((item) => item.status === "done");
   return state.reminders;
 }
@@ -404,7 +404,7 @@ function renderReminders() {
           <span>截止：${escapeHtml(reminder.due_at)}</span>
           <span>提醒日：${escapeHtml(reminder.remind_at)}</span>
           <span>提前 ${escapeHtml(reminder.remind_days || 15)} 天</span>
-          ${reminder.task_id ? `<span>已转任务 #${escapeHtml(reminder.task_id)}</span>` : ""}
+          ${reminder.task_id ? `<span>已转任务 #${escapeHtml(reminder.task_id)}${reminder.linked_task_status ? ` · ${escapeHtml(statusLabel[reminder.linked_task_status] || reminder.linked_task_status)}` : " · 任务未找到"}</span>` : ""}
         </div>
       </div>
       <div class="task-actions">
@@ -1421,6 +1421,13 @@ reminderForm.addEventListener("submit", async (event) => {
   } catch (error) {
     showToast(error.message);
   }
+});
+
+document.querySelector("#reminderFilters").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-reminder-filter]");
+  if (!button) return;
+  state.reminderFilter = button.dataset.reminderFilter;
+  renderReminders();
 });
 
 document.querySelector("#reminderList").addEventListener("click", async (event) => {
