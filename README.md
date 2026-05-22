@@ -31,12 +31,14 @@ python3 app.py 8001
 http://127.0.0.1:8000
 ```
 
-首次启动会自动创建默认账号，并在终端打印二次验证密钥和当前动态码：
+首次启动会自动创建默认账号：
 
 ```text
 账号：admin
-密码：admin123
+密码：Admin2026
 ```
+
+如果设置了环境变量 `SOP_ADMIN_PASSWORD`，首次创建管理员时会使用该环境变量作为默认密码。注意：默认密码只在数据库为空时生效；如果 `data/sop.db` 已经存在，更新代码不会覆盖已有账号密码。忘记 Google Authenticator 时，可以在登录页用“重置 Google 验证器”重新生成二维码。
 
 ## 功能
 
@@ -45,7 +47,7 @@ http://127.0.0.1:8000
 - 注册或重置二次验证后，页面内置显示 Google Authenticator 扫描二维码
 - 忘记或丢失二次验证时，可用用户名 + 密码重置 Google 验证器密钥
 - 每个用户登录后只看到分配给自己的任务
-- 任务分为本周任务和本月任务
+- 任务分为本周任务、本月任务和年度任务
 - 创建任务时填写负责人、跟进人和计划完成时间
 - 支持指派任务、标记进行中、完成、删除
 - 任务创建后的标题、类型、负责人、截止时间和原始说明固定，不在执行阶段随意修改
@@ -53,6 +55,7 @@ http://127.0.0.1:8000
 - 自动识别延期任务，并展示延期原因
 - 延期和本周、本月同级展示，可直接筛选延期任务
 - 展示本月任务到期、完成、延期和完成率
+- 管理员可以停用/删除用户，用户不能再登录，但历史任务仍保留
 - SQLite 本地持久化
 
 ## API
@@ -61,10 +64,12 @@ http://127.0.0.1:8000
 - `POST /api/register`：注册用户并生成二次验证密钥
 - `POST /api/login`：登录
 - `POST /api/reset-otp`：用用户名和密码重置 Google Authenticator 密钥
-- `GET /api/otp-qr?username=...&secret=...`：生成 Google Authenticator 二维码 PNG
+- `GET /api/otp-qr?username=...&secret=...`：生成 Google Authenticator 二维码
 - `POST /api/logout`：退出
 - `GET /api/bootstrap`：获取当前用户、用户列表、我的任务、统计
 - `GET /api/tasks?type=all&status=all`：获取我的任务
 - `POST /api/tasks`：新建任务
 - `PATCH /api/tasks/<id>`：更新任务
 - `DELETE /api/tasks/<id>`：删除任务
+- `POST /api/users/role`：管理员修改用户权限
+- `POST /api/users/delete`：管理员停用/删除用户，保留历史任务

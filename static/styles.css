@@ -570,9 +570,22 @@ code {
   font-size: 13px;
 }
 
+.user-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
 .user-row button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.danger-button {
+  color: var(--red);
+  border-color: rgba(216, 74, 64, 0.35);
+  background: var(--red-soft);
 }
 
 .panel-header {

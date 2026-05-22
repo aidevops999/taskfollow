@@ -150,6 +150,7 @@ def init_db() -> None:
               password_hash TEXT NOT NULL,
               totp_secret TEXT NOT NULL,
               role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+              is_active INTEGER NOT NULL DEFAULT 1,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -206,8 +207,8 @@ def init_db() -> None:
             admin_password = os.environ.get("SOP_ADMIN_PASSWORD") or "Admin2026"
             conn.execute(
                 """
-                INSERT INTO users (username, display_name, password_hash, totp_secret, role)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO users (username, display_name, password_hash, totp_secret, role, is_active)
+                VALUES (?, ?, ?, ?, ?, 1)
                 """,
                 ("admin", "管理员", hash_password(admin_password), admin_secret, "admin"),
             )
@@ -272,8 +273,11 @@ def ensure_user_columns(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     if "role" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+    if "is_active" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
     conn.execute("UPDATE users SET role = 'admin' WHERE username = 'admin'")
     conn.execute("UPDATE users SET role = 'user' WHERE role NOT IN ('user', 'admin')")
+    conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
 
 
 def ensure_reminder_columns(conn: sqlite3.Connection) -> None:
@@ -445,6 +449,13 @@ class AppHandler(BaseHTTPRequestHandler):
             self.update_user_role(user)
             return
 
+        if parsed.path == "/api/users/delete":
+            user = self.require_user()
+            if not user:
+                return
+            self.delete_user(user)
+            return
+
         if parsed.path == "/api/reminders":
             user = self.require_user()
             if not user:
@@ -570,7 +581,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         with get_connection() as conn:
-            if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= MAX_USERS:
+            if conn.execute("SELECT COUNT(*) FROM users WHERE is_active = 1").fetchone()[0] >= MAX_USERS:
                 self.send_json({"error": "用户数已达 10 人上限"}, HTTPStatus.BAD_REQUEST)
                 return
             if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
@@ -580,8 +591,8 @@ class AppHandler(BaseHTTPRequestHandler):
             secret = generate_totp_secret()
             conn.execute(
                 """
-                INSERT INTO users (username, display_name, password_hash, totp_secret, role)
-                VALUES (?, ?, ?, ?, 'user')
+                INSERT INTO users (username, display_name, password_hash, totp_secret, role, is_active)
+                VALUES (?, ?, ?, ?, 'user', 1)
                 """,
                 (username, display_name, hash_password(password), secret),
             )
@@ -596,6 +607,38 @@ class AppHandler(BaseHTTPRequestHandler):
             },
             HTTPStatus.CREATED,
         )
+
+    def delete_user(self, admin_user: sqlite3.Row) -> None:
+        if not self.is_admin(admin_user):
+            self.send_json({"error": "只有管理员可以删除用户"}, HTTPStatus.FORBIDDEN)
+            return
+
+        payload = self.read_json()
+        user_id = int(payload.get("user_id") or 0)
+        if user_id == admin_user["id"]:
+            self.send_json({"error": "不能删除当前登录的管理员账号"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        with get_connection() as conn:
+            target = conn.execute(
+                "SELECT id, role, is_active FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if not target or not target["is_active"]:
+                self.send_json({"error": "用户不存在或已删除"}, HTTPStatus.NOT_FOUND)
+                return
+            if target["role"] == "admin":
+                active_admins = conn.execute(
+                    "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1"
+                ).fetchone()[0]
+                if active_admins <= 1:
+                    self.send_json({"error": "至少需要保留一个管理员"}, HTTPStatus.BAD_REQUEST)
+                    return
+
+            conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+        self.send_json({"users": self.fetch_users(), "team_overview": self.fetch_team_overview()})
 
     def update_user_role(self, admin_user: sqlite3.Row) -> None:
         if not self.is_admin(admin_user):
@@ -613,7 +656,7 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         with get_connection() as conn:
-            result = conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+            result = conn.execute("UPDATE users SET role = ? WHERE id = ? AND is_active = 1", (role, user_id))
             if result.rowcount == 0:
                 self.send_json({"error": "用户不存在"}, HTTPStatus.NOT_FOUND)
                 return
@@ -627,7 +670,7 @@ class AppHandler(BaseHTTPRequestHandler):
         otp_code = str(payload.get("otp", ""))
 
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE username = ? AND is_active = 1", (username,)).fetchone()
 
         if not row or not verify_password(password, row["password_hash"]):
             self.send_json({"error": "用户名或密码不正确"}, HTTPStatus.UNAUTHORIZED)
@@ -652,7 +695,7 @@ class AppHandler(BaseHTTPRequestHandler):
         password = str(payload.get("password", ""))
 
         with get_connection() as conn:
-            row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            row = conn.execute("SELECT * FROM users WHERE username = ? AND is_active = 1", (username,)).fetchone()
             if not row or not verify_password(password, row["password_hash"]):
                 self.send_json({"error": "用户名或密码不正确"}, HTTPStatus.UNAUTHORIZED)
                 return
@@ -864,7 +907,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def fetch_users(self) -> list[dict]:
         with get_connection() as conn:
-            rows = conn.execute("SELECT id, username, display_name, role FROM users ORDER BY display_name").fetchall()
+            rows = conn.execute("SELECT id, username, display_name, role, is_active FROM users WHERE is_active = 1 ORDER BY display_name").fetchall()
         return [row_to_dict(row) for row in rows]
 
     def task_scope_user_id(self, user: sqlite3.Row, query: str) -> int:
@@ -1109,6 +1152,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 SELECT
                   users.id AS user_id,
                   users.display_name,
+                  users.is_active,
                   COUNT(tasks.id) AS total,
                   SUM(CASE WHEN tasks.task_type = 'week' THEN 1 ELSE 0 END) AS week,
                   SUM(CASE WHEN tasks.task_type = 'month' THEN 1 ELSE 0 END) AS month,
@@ -1125,7 +1169,8 @@ class AppHandler(BaseHTTPRequestHandler):
                   ) AS delayed
                 FROM users
                 LEFT JOIN tasks ON tasks.owner_id = users.id
-                GROUP BY users.id, users.display_name
+                GROUP BY users.id, users.display_name, users.is_active
+                HAVING users.is_active = 1 OR COUNT(tasks.id) > 0
                 ORDER BY total DESC, delayed DESC, users.display_name ASC
                 """,
                 (today,),
@@ -1156,7 +1201,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 SELECT users.*
                 FROM sessions
                 JOIN users ON users.id = sessions.user_id
-                WHERE sessions.token = ? AND sessions.expires_at > ?
+                WHERE sessions.token = ? AND sessions.expires_at > ? AND users.is_active = 1
                 """,
                 (token, iso_now()),
             ).fetchone()

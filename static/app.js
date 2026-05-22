@@ -171,6 +171,9 @@ const api = {
   async updateUserRole(payload) {
     return request("/api/users/role", { method: "POST", body: payload });
   },
+  async deleteUser(payload) {
+    return request("/api/users/delete", { method: "POST", body: payload });
+  },
 };
 
 async function request(url, options = {}) {
@@ -448,8 +451,8 @@ function renderTeamOverview() {
     return `
       <article class="team-row ${delayedClass}">
         <div>
-          <strong>${escapeHtml(item.display_name)}</strong>
-          <span>点击右侧数字查看对应任务</span>
+          <strong>${escapeHtml(item.display_name)}${item.is_active ? "" : ' <span class="status delayed">已删除</span>'}</strong>
+          <span>${item.is_active ? "点击右侧数字查看对应任务" : "用户已删除，历史任务仍保留"}</span>
         </div>
         <div class="team-metrics">
           ${metricButton(item, "total", item.total, "总数")}
@@ -548,9 +551,12 @@ function renderUserAdminPanel() {
           <strong>${escapeHtml(user.display_name)}</strong>
           <span>${escapeHtml(user.username)} · ${isAdmin ? "管理员" : "普通用户"}</span>
         </div>
-        <button data-role-user="${user.id}" data-role="${isAdmin ? "user" : "admin"}" ${isSelf ? "disabled" : ""}>
-          ${isAdmin ? "设为普通用户" : "设为管理员"}
-        </button>
+        <div class="user-actions">
+          <button data-role-user="${user.id}" data-role="${isAdmin ? "user" : "admin"}" ${isSelf ? "disabled" : ""}>
+            ${isAdmin ? "设为普通用户" : "设为管理员"}
+          </button>
+          <button class="danger-button" data-delete-user="${user.id}" data-user-name="${escapeHtml(user.display_name)}" ${isSelf ? "disabled" : ""}>删除用户</button>
+        </div>
       </article>
     `;
   }).join("");
@@ -985,20 +991,30 @@ document.querySelector("#clearTaskScope").addEventListener("click", async () => 
 });
 
 document.querySelector("#userAdminList").addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-role-user]");
+  const deleteButton = event.target.closest("button[data-delete-user]");
+  const roleButton = event.target.closest("button[data-role-user]");
+  const button = deleteButton || roleButton;
   if (!button) return;
 
   try {
-    const data = await api.updateUserRole({
-      user_id: button.dataset.roleUser,
-      role: button.dataset.role,
-    });
+    let data;
+    if (deleteButton) {
+      const name = deleteButton.dataset.userName || "这个用户";
+      if (!window.confirm(`确定删除 ${name}？任务会保留，但该用户不能再登录。`)) return;
+      data = await api.deleteUser({ user_id: deleteButton.dataset.deleteUser });
+      showToast("用户已删除，历史任务已保留");
+    } else {
+      data = await api.updateUserRole({
+        user_id: roleButton.dataset.roleUser,
+        role: roleButton.dataset.role,
+      });
+      showToast("用户权限已更新");
+    }
     state.users = data.users;
     state.teamOverview = data.team_overview || [];
     renderUserAdminPanel();
     renderTeamOverview();
     renderUsers();
-    showToast("用户权限已更新");
   } catch (error) {
     showToast(error.message);
   }
