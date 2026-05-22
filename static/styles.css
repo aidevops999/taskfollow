@@ -285,6 +285,32 @@ code {
   padding: 18px;
 }
 
+
+.reminder-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 18px 0;
+}
+
+.reminder-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.reminder-filters button.active {
+  border-color: #b9ccf6;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.reminder-filters b {
+  font-size: 14px;
+}
+
 .reminder-list {
   display: grid;
   gap: 12px;

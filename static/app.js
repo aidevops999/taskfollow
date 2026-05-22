@@ -16,6 +16,7 @@ const state = {
   dueStart: "",
   dueEnd: "",
   search: "",
+  reminderFilter: "all",
   taskPage: 1,
   taskPageSize: 10,
 };
@@ -314,10 +315,12 @@ function renderTodayBoard() {
   const delayed = state.tasks.filter((task) => task.is_delayed && task.status !== "done").length;
   const weekOpen = state.tasks.filter(isThisWeek).length;
   const urgentReminders = state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue)).length;
+  const convertedOpen = state.reminders.filter((item) => item.task_id && item.status === "open").length;
   board.innerHTML = `
     <button type="button" data-today-scope="delayed"><b>${delayed}</b><span>延期待处理</span></button>
     <button type="button" data-today-scope="week"><b>${weekOpen}</b><span>本周未完成</span></button>
     <button type="button" data-today-scope="reminders"><b>${urgentReminders}</b><span>提醒需关注</span></button>
+    <button type="button" data-today-scope="converted-reminders"><b>${convertedOpen}</b><span>已转任务未完成</span></button>
   `;
 }
 
@@ -335,20 +338,61 @@ function reminderStatusText(reminder) {
   return `${reminder.remind_at} 开始提醒`;
 }
 
+function reminderCounts() {
+  return {
+    all: state.reminders.length,
+    open: state.reminders.filter((item) => item.status === "open").length,
+    attention: state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue)).length,
+    converted: state.reminders.filter((item) => item.task_id && item.status === "open").length,
+    done: state.reminders.filter((item) => item.status === "done").length,
+  };
+}
+
+function filteredReminders() {
+  if (state.reminderFilter === "open") return state.reminders.filter((item) => item.status === "open");
+  if (state.reminderFilter === "attention") return state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue));
+  if (state.reminderFilter === "converted") return state.reminders.filter((item) => item.task_id && item.status === "open");
+  if (state.reminderFilter === "done") return state.reminders.filter((item) => item.status === "done");
+  return state.reminders;
+}
+
+function renderReminderFilters() {
+  const bar = document.querySelector("#reminderFilters");
+  const summary = document.querySelector("#reminderSummary");
+  if (!bar || !summary) return;
+  const counts = reminderCounts();
+  const filters = [
+    ["all", "全部", counts.all],
+    ["open", "未完成", counts.open],
+    ["attention", "需关注", counts.attention],
+    ["converted", "已转任务", counts.converted],
+    ["done", "已完成", counts.done],
+  ];
+  bar.innerHTML = filters.map(([key, label, count]) => `
+    <button type="button" data-reminder-filter="${key}" class="${state.reminderFilter === key ? "active" : ""}">
+      <span>${label}</span><b>${count}</b>
+    </button>
+  `).join("");
+  summary.textContent = `${counts.open} 个未完成，${counts.attention} 个需关注`;
+}
+
 function renderReminders() {
   const list = document.querySelector("#reminderList");
   const summary = document.querySelector("#reminderSummary");
   if (!list || !summary) return;
-  const openCount = state.reminders.filter((item) => item.status === "open").length;
-  const dueSoon = state.reminders.filter((item) => item.is_due_soon || item.is_overdue).length;
-  summary.textContent = `${openCount} 个未完成，${dueSoon} 个需关注`;
+  renderReminderFilters();
+  const reminders = filteredReminders();
 
   if (!state.reminders.length) {
     list.innerHTML = '<div class="empty">还没有提醒事项。</div>';
     return;
   }
+  if (!reminders.length) {
+    list.innerHTML = '<div class="empty">当前筛选下没有提醒事项。</div>';
+    return;
+  }
 
-  list.innerHTML = state.reminders.map((reminder) => `
+  list.innerHTML = reminders.map((reminder) => `
     <article class="reminder-card ${reminderClass(reminder)}">
       <div>
         <div class="task-head">
@@ -1044,6 +1088,12 @@ document.querySelector("#todayBoard").addEventListener("click", async (event) =>
   const button = event.target.closest("button[data-today-scope]");
   if (!button) return;
   if (button.dataset.todayScope === "reminders") {
+    state.reminderFilter = "attention";
+    showReminderPage();
+    return;
+  }
+  if (button.dataset.todayScope === "converted-reminders") {
+    state.reminderFilter = "converted";
     showReminderPage();
     return;
   }
