@@ -875,6 +875,18 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_json({"reminders": self.fetch_reminders(user["id"])}, HTTPStatus.CREATED)
 
     def convert_reminder_to_task(self, user: sqlite3.Row, reminder_id: int) -> None:
+        payload = self.read_json()
+        task_type = str(payload.get("task_type", "week")).strip()
+        owner_id = int(payload.get("owner_id") or user["id"])
+        follower = str(payload.get("follower", "")).strip() or user["display_name"]
+
+        if task_type not in {"week", "month", "year"}:
+            self.send_json({"error": "任务类型不正确"}, HTTPStatus.BAD_REQUEST)
+            return
+        if not follower:
+            self.send_json({"error": "跟进人不能为空"}, HTTPStatus.BAD_REQUEST)
+            return
+
         with get_connection() as conn:
             reminder = conn.execute(
                 "SELECT * FROM reminders WHERE id = ? AND user_id = ?",
@@ -886,11 +898,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if reminder["task_id"]:
                 self.send_json({"error": "该提醒已经转为任务"}, HTTPStatus.BAD_REQUEST)
                 return
+            if not conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1", (owner_id,)).fetchone():
+                self.send_json({"error": "负责人不存在或已删除"}, HTTPStatus.BAD_REQUEST)
+                return
 
             description_parts = ["由提醒备忘转入任务。"]
             if reminder["note"]:
                 description_parts.append(f"备忘备注：{reminder['note']}")
-            task_type = "week"
             conn.execute(
                 """
                 INSERT INTO tasks
@@ -900,9 +914,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 (
                     reminder["title"],
                     task_type,
+                    owner_id,
                     user["id"],
-                    user["id"],
-                    user["display_name"],
+                    follower,
                     reminder["due_at"],
                     "\n".join(description_parts),
                 ),

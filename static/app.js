@@ -178,8 +178,8 @@ const api = {
   async deleteReminder(id) {
     return request(`/api/reminders/${id}`, { method: "DELETE" });
   },
-  async convertReminderToTask(id) {
-    return request(`/api/reminders/${id}/task`, { method: "POST" });
+  async convertReminderToTask(id, payload) {
+    return request(`/api/reminders/${id}/task`, { method: "POST", body: payload });
   },
   async updateUserRole(payload) {
     return request("/api/users/role", { method: "POST", body: payload });
@@ -583,11 +583,14 @@ function renderUserAdminPanel() {
 
 function renderUsers() {
   const ownerSelect = document.querySelector("#ownerSelect");
-  ownerSelect.innerHTML = state.users.map((user) => `
+  const reminderTaskOwnerSelect = document.querySelector("#reminderTaskOwnerSelect");
+  const options = state.users.map((user) => `
     <option value="${user.id}" ${state.user && user.id === state.user.id ? "selected" : ""}>
       ${escapeHtml(user.display_name)}
     </option>
   `).join("");
+  if (ownerSelect) ownerSelect.innerHTML = options;
+  if (reminderTaskOwnerSelect) reminderTaskOwnerSelect.innerHTML = options;
 }
 
 function dueText(task) {
@@ -1310,6 +1313,48 @@ document.querySelector("#quickTaskForm").addEventListener("submit", async (event
   }
 });
 
+const reminderTaskDialog = document.querySelector("#reminderTaskDialog");
+const reminderTaskForm = document.querySelector("#reminderTaskForm");
+
+function openReminderTaskDialog(reminderId) {
+  const reminder = state.reminders.find((item) => String(item.id) === String(reminderId));
+  if (!reminder) return;
+  renderUsers();
+  document.querySelector("#reminderTaskId").value = reminder.id;
+  document.querySelector("#reminderTaskTitle").value = reminder.title;
+  document.querySelector("#reminderTaskType").value = "week";
+  document.querySelector("#reminderTaskFollower").value = state.user ? state.user.display_name : "";
+  document.querySelector("#reminderTaskHint").textContent = `截止时间沿用提醒日期 ${reminder.due_at}，提醒本身会保留并关联新任务。`;
+  reminderTaskDialog.showModal();
+}
+
+document.querySelector("#closeReminderTaskDialog").addEventListener("click", () => reminderTaskDialog.close());
+document.querySelector("#cancelReminderTask").addEventListener("click", () => reminderTaskDialog.close());
+
+reminderTaskForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(reminderTaskForm);
+  const reminderId = payload.reminder_id;
+  delete payload.reminder_id;
+  try {
+    const data = await api.convertReminderToTask(reminderId, payload);
+    state.reminders = data.reminders || [];
+    state.tasks = data.tasks || state.tasks;
+    state.stats = data.stats || state.stats;
+    state.monthly = data.monthly || state.monthly;
+    reminderTaskForm.reset();
+    reminderTaskDialog.close();
+    renderStats();
+    renderMonthly();
+    renderTodayBoard();
+    renderTasks();
+    renderReminders();
+    showToast("已转为任务，提醒仍保留");
+  } catch (error) {
+    showToast(error.message);
+  }
+});
+
 const reminderForm = document.querySelector("#reminderForm");
 document.querySelector("#reminderDueInput").min = todayISO();
 
@@ -1337,15 +1382,8 @@ document.querySelector("#reminderList").addEventListener("click", async (event) 
       data = await api.deleteReminder(button.dataset.id);
       showToast("提醒已删除");
     } else if (button.dataset.reminderAction === "task") {
-      data = await api.convertReminderToTask(button.dataset.id);
-      state.tasks = data.tasks || state.tasks;
-      state.stats = data.stats || state.stats;
-      state.monthly = data.monthly || state.monthly;
-      renderStats();
-      renderMonthly();
-      renderTodayBoard();
-      renderTasks();
-      showToast("已转为任务，提醒仍保留");
+      openReminderTaskDialog(button.dataset.id);
+      return;
     } else {
       data = await api.updateReminder(button.dataset.id, { status: button.dataset.reminderAction });
       showToast("提醒状态已更新");

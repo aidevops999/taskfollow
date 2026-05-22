@@ -321,6 +321,49 @@
     </form>
   </dialog>
 
+  <dialog id="reminderTaskDialog">
+    <form class="dialog-card" id="reminderTaskForm">
+      <div class="dialog-header">
+        <h2>提醒转任务</h2>
+        <button type="button" class="icon-button" id="closeReminderTaskDialog">×</button>
+      </div>
+
+      <input type="hidden" name="reminder_id" id="reminderTaskId">
+
+      <label>
+        提醒事项
+        <input id="reminderTaskTitle" disabled>
+      </label>
+
+      <div class="form-row">
+        <label>
+          类型
+          <select name="task_type" id="reminderTaskType">
+            <option value="week">本周任务</option>
+            <option value="month">本月任务</option>
+            <option value="year">年度任务</option>
+          </select>
+        </label>
+        <label>
+          负责人
+          <select name="owner_id" id="reminderTaskOwnerSelect"></select>
+        </label>
+      </div>
+
+      <label>
+        跟进人
+        <input name="follower" id="reminderTaskFollower" required placeholder="例如：李四">
+      </label>
+
+      <p class="locked-note" id="reminderTaskHint"></p>
+
+      <div class="dialog-actions">
+        <button type="button" id="cancelReminderTask">取消</button>
+        <button class="primary" type="submit">生成任务</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="passwordDialog">
     <form class="dialog-card" id="passwordForm">
       <div class="dialog-header">
