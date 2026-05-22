@@ -73,3 +73,32 @@ http://127.0.0.1:8000
 - `DELETE /api/tasks/<id>`：删除任务
 - `POST /api/users/role`：管理员修改用户权限
 - `POST /api/users/delete`：管理员停用/删除用户，保留历史任务
+
+## 数据库备份
+
+每次运行 `scripts/update_server.sh` 更新代码前，会自动备份一次 `data/sop.db` 到 `data/backups/`。
+
+如果希望服务器每周自动备份一次，并只保留最近 7 天内的备份，可以在服务器项目目录执行：
+
+```bash
+chmod +x scripts/backup_database.sh scripts/install_backup_timer.sh
+./scripts/install_backup_timer.sh
+```
+
+默认备份时间是每周日 03:30，备份文件保存到：
+
+```text
+data/backups/sop-年月日-时分秒.db
+```
+
+可以手动测试一次：
+
+```bash
+./scripts/backup_database.sh
+```
+
+如果要改备份时间或保留天数，可以这样安装：
+
+```bash
+RUN_CALENDAR="Mon *-*-* 02:00:00" RETENTION_DAYS=7 ./scripts/install_backup_timer.sh
+```
