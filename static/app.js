@@ -167,6 +167,9 @@ const api = {
   async deleteTask(id) {
     return request(`/api/tasks/${id}`, { method: "DELETE" });
   },
+  async createTaskComment(id, payload) {
+    return request(`/api/tasks/${id}/comments`, { method: "POST", body: payload });
+  },
   async reminders() {
     return request("/api/reminders");
   },
@@ -709,6 +712,30 @@ function detailSection(title, value) {
       <p>${escapeHtml(value || "未填写")}</p>
     </section>
   `;
+}
+
+function renderTaskComments(task) {
+  const comments = task.comments || [];
+  if (!comments.length) return '<div class="empty small-empty">暂无跟进记录。</div>';
+  return comments.map((item) => `
+    <article class="timeline-item">
+      <strong>${escapeHtml(item.user_name || "未知用户")}</strong>
+      <time>${escapeHtml(item.created_at || "")}</time>
+      <p>${escapeHtml(item.comment || "")}</p>
+    </article>
+  `).join("");
+}
+
+function renderTaskLogs(task) {
+  const logs = task.logs || [];
+  if (!logs.length) return '<div class="empty small-empty">暂无操作记录。</div>';
+  return logs.map((item) => `
+    <article class="timeline-item muted-timeline">
+      <strong>${escapeHtml(item.action || "操作")}</strong>
+      <time>${escapeHtml(item.created_at || "")} · ${escapeHtml(item.user_name || "未知用户")}</time>
+      <p>${escapeHtml(item.detail || "")}</p>
+    </article>
+  `).join("");
 }
 
 function isUrgent(task) {
@@ -1287,6 +1314,10 @@ function openTaskDetail(taskId, options = {}) {
     ${detailSection("问题展示", task.issue_note)}
     ${detailSection("延期原因", task.delay_reason)}
   `;
+  document.querySelector("#commentTaskId").value = task.id;
+  document.querySelector("#taskCommentInput").value = "";
+  document.querySelector("#taskComments").innerHTML = renderTaskComments(task);
+  document.querySelector("#taskLogs").innerHTML = renderTaskLogs(task);
   document.querySelector("#detailEditBtn").dataset.id = task.id;
   detailDialog.showModal();
 }
@@ -1299,6 +1330,28 @@ document.querySelector("#detailEditBtn").addEventListener("click", (event) => {
   detailDialog.close();
   clearTaskHash();
   openProgressDialog(taskId);
+});
+
+const taskCommentForm = document.querySelector("#taskCommentForm");
+taskCommentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(taskCommentForm);
+  const taskId = payload.task_id;
+  delete payload.task_id;
+  try {
+    const data = await api.createTaskComment(taskId, payload);
+    const task = state.tasks.find((item) => String(item.id) === String(taskId));
+    if (task && data.task_detail) {
+      task.comments = data.task_detail.comments || [];
+      task.logs = data.task_detail.logs || [];
+      document.querySelector("#taskComments").innerHTML = renderTaskComments(task);
+      document.querySelector("#taskLogs").innerHTML = renderTaskLogs(task);
+    }
+    document.querySelector("#taskCommentInput").value = "";
+    showToast("跟进记录已提交");
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
 function openProgressDialog(taskId) {

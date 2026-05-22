@@ -436,6 +436,24 @@
         <button type="button" class="icon-button" id="closeDetailDialog">×</button>
       </div>
       <div id="detailBody"></div>
+      <form class="comment-form" id="taskCommentForm">
+        <input type="hidden" id="commentTaskId" name="task_id">
+        <label>
+          新增跟进记录
+          <textarea id="taskCommentInput" name="comment" rows="3" placeholder="写下本次沟通、处理结果或下一步动作"></textarea>
+        </label>
+        <div class="dialog-actions compact-actions">
+          <button type="submit" class="primary">提交跟进</button>
+        </div>
+      </form>
+      <div class="detail-section">
+        <h3>跟进记录</h3>
+        <div id="taskComments"></div>
+      </div>
+      <div class="detail-section">
+        <h3>操作记录</h3>
+        <div id="taskLogs"></div>
+      </div>
       <div class="dialog-actions">
         <button type="button" id="detailEditBtn">更新进展</button>
       </div>

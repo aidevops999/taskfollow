@@ -48,6 +48,7 @@ def iso_now() -> str:
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -195,6 +196,28 @@ def init_db() -> None:
               completed_at TEXT,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+
+            CREATE TABLE IF NOT EXISTS task_comments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id INTEGER NOT NULL,
+              user_id INTEGER NOT NULL,
+              comment TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+              FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS task_logs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              task_id INTEGER,
+              user_id INTEGER NOT NULL,
+              action TEXT NOT NULL,
+              detail TEXT NOT NULL DEFAULT '',
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             """
@@ -438,6 +461,14 @@ class AppHandler(BaseHTTPRequestHandler):
             self.change_password(user)
             return
 
+        comment_task_id = self.task_comment_id_from_path(parsed.path)
+        if comment_task_id is not None:
+            user = self.require_user()
+            if not user:
+                return
+            self.create_task_comment(user, comment_task_id)
+            return
+
         if parsed.path == "/api/tasks":
             user = self.require_user()
             if not user:
@@ -519,6 +550,7 @@ class AppHandler(BaseHTTPRequestHandler):
         assignments = ", ".join(f"{key} = ?" for key in updates)
         values = list(updates.values()) + [iso_now(), task_id, user["id"], user["id"]]
         with get_connection() as conn:
+            before = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             result = conn.execute(
                 f"""
                 UPDATE tasks
@@ -530,6 +562,8 @@ class AppHandler(BaseHTTPRequestHandler):
             if result.rowcount == 0:
                 self.send_json({"error": "没有权限更新该任务"}, HTTPStatus.FORBIDDEN)
                 return
+            if before:
+                self.log_task_event(conn, task_id, user["id"], "更新任务", self.task_change_detail(before, updates))
 
         self.send_json(
             {
@@ -569,6 +603,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "只有管理员或任务创建人可以删除该任务"}, HTTPStatus.FORBIDDEN)
                 return
 
+            self.log_task_event(conn, task_id, user["id"], "删除任务", f"删除任务：{task['id']}")
             conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
 
         self.send_json(
@@ -578,6 +613,42 @@ class AppHandler(BaseHTTPRequestHandler):
                 "monthly": self.fetch_monthly_stats(user["id"], ""),
             }
         )
+
+    def log_task_event(self, conn: sqlite3.Connection, task_id: int | None, user_id: int, action: str, detail: str = "") -> None:
+        conn.execute(
+            "INSERT INTO task_logs (task_id, user_id, action, detail) VALUES (?, ?, ?, ?)",
+            (task_id, user_id, action, detail),
+        )
+
+    def task_accessible(self, conn: sqlite3.Connection, task_id: int, user: sqlite3.Row) -> sqlite3.Row | None:
+        task = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if not task:
+            return None
+        if self.is_admin(user) or task["owner_id"] == user["id"] or task["creator_id"] == user["id"]:
+            return task
+        return None
+
+    def task_change_detail(self, before: sqlite3.Row, updates: dict) -> str:
+        labels = {
+            "status": "状态",
+            "work_note": "执行备注",
+            "issue_note": "问题展示",
+            "delay_reason": "延期原因",
+            "due_at": "计划完成时间",
+        }
+        status_labels = {"todo": "待处理", "doing": "进行中", "done": "已完成"}
+        changes = []
+        for key, value in updates.items():
+            if key == "completed_at":
+                continue
+            old_value = before[key] if key in before.keys() else None
+            new_value = value
+            if key == "status":
+                old_value = status_labels.get(str(old_value), str(old_value))
+                new_value = status_labels.get(str(new_value), str(new_value))
+            if old_value != new_value:
+                changes.append(f"{labels.get(key, key)}：{old_value or '空'} -> {new_value or '空'}")
+        return "；".join(changes) or "更新了任务"
 
     def register(self) -> None:
         payload = self.read_json()
@@ -806,6 +877,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 """,
                 (title, task_type, status, owner_id, user["id"], follower, due_at, priority, description),
             )
+            task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            self.log_task_event(conn, task_id, user["id"], "创建任务", f"创建任务：{title}")
 
         self.send_json(
             {
@@ -815,6 +888,29 @@ class AppHandler(BaseHTTPRequestHandler):
             },
             HTTPStatus.CREATED,
         )
+
+    def create_task_comment(self, user: sqlite3.Row, task_id: int) -> None:
+        payload = self.read_json()
+        comment = str(payload.get("comment", "")).strip()
+        if not comment:
+            self.send_json({"error": "跟进内容不能为空"}, HTTPStatus.BAD_REQUEST)
+            return
+        if len(comment) > 1000:
+            self.send_json({"error": "跟进内容不能超过 1000 字"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        with get_connection() as conn:
+            task = self.task_accessible(conn, task_id, user)
+            if not task:
+                self.send_json({"error": "任务不存在或没有权限"}, HTTPStatus.FORBIDDEN)
+                return
+            conn.execute(
+                "INSERT INTO task_comments (task_id, user_id, comment) VALUES (?, ?, ?)",
+                (task_id, user["id"], comment),
+            )
+            self.log_task_event(conn, task_id, user["id"], "新增跟进", comment[:120])
+
+        self.send_json({"task_detail": self.fetch_task_detail(task_id, user) or {}})
 
     def clean_due_date(self, value: str) -> str | None:
         if not value:
@@ -833,6 +929,12 @@ class AppHandler(BaseHTTPRequestHandler):
     def task_id_from_path(self, path: str) -> int | None:
         parts = path.strip("/").split("/")
         if len(parts) == 3 and parts[:2] == ["api", "tasks"] and parts[2].isdigit():
+            return int(parts[2])
+        return None
+
+    def task_comment_id_from_path(self, path: str) -> int | None:
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "tasks"] and parts[2].isdigit() and parts[3] == "comments":
             return int(parts[2])
         return None
 
@@ -926,6 +1028,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 "UPDATE reminders SET task_id = ?, updated_at = ? WHERE id = ?",
                 (task_id, iso_now(), reminder_id),
             )
+            self.log_task_event(conn, task_id, user["id"], "提醒转任务", f"由提醒 #{reminder_id} 转入任务")
 
         self.send_json(
             {
@@ -959,6 +1062,37 @@ class AppHandler(BaseHTTPRequestHandler):
                 return
 
         self.send_json({"reminders": self.fetch_reminders(user["id"])})
+
+    def fetch_task_detail(self, task_id: int, user: sqlite3.Row) -> dict | None:
+        with get_connection() as conn:
+            task = self.task_accessible(conn, task_id, user)
+            if not task:
+                return None
+            comments = conn.execute(
+                """
+                SELECT task_comments.*, users.display_name AS user_name
+                FROM task_comments
+                JOIN users ON users.id = task_comments.user_id
+                WHERE task_comments.task_id = ?
+                ORDER BY task_comments.created_at DESC, task_comments.id DESC
+                """,
+                (task_id,),
+            ).fetchall()
+            logs = conn.execute(
+                """
+                SELECT task_logs.*, users.display_name AS user_name
+                FROM task_logs
+                JOIN users ON users.id = task_logs.user_id
+                WHERE task_logs.task_id = ?
+                ORDER BY task_logs.created_at DESC, task_logs.id DESC
+                LIMIT 80
+                """,
+                (task_id,),
+            ).fetchall()
+        return {
+            "comments": [row_to_dict(row) for row in comments],
+            "logs": [row_to_dict(row) for row in logs],
+        }
 
     def fetch_reminders(self, user_id: int) -> list[dict]:
         today_date = utc_now().date()
@@ -1045,6 +1179,7 @@ class AppHandler(BaseHTTPRequestHandler):
             clauses.append("tasks.due_at <= ?")
             values.append(due_end)
 
+        current_user = self.current_user()
         with get_connection() as conn:
             rows = conn.execute(
                 f"""
@@ -1082,6 +1217,9 @@ class AppHandler(BaseHTTPRequestHandler):
                 and task["due_at"]
                 and task["due_at"] < today
             )
+            detail = self.fetch_task_detail(task["id"], current_user) if current_user else None
+            task["comments"] = detail["comments"] if detail else []
+            task["logs"] = detail["logs"] if detail else []
             tasks.append(task)
         return tasks
 
