@@ -686,6 +686,10 @@ function exportDoingTasks() {
   showToast(`已导出 ${doingTasks.length} 条进行中任务`);
 }
 
+function canDeleteTask(task) {
+  return state.user && (state.user.role === "admin" || String(task.creator_id) === String(state.user.id));
+}
+
 function renderTasks() {
   const list = document.querySelector("#taskList");
   renderExportCount();
@@ -721,7 +725,7 @@ function renderTasks() {
         ${rolloverButton(task)}
         ${task.status !== "doing" ? `<button data-action="doing" data-id="${task.id}">进行中</button>` : ""}
         ${task.status !== "done" ? `<button data-action="done" data-id="${task.id}">完成</button>` : ""}
-        <button data-action="delete" data-id="${task.id}">删除</button>
+        ${canDeleteTask(task) ? `<button data-action="delete" data-id="${task.id}">删除</button>` : ""}
       </div>
     </article>
   `).join("");

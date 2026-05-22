@@ -550,13 +550,15 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         with get_connection() as conn:
-            result = conn.execute(
-                "DELETE FROM tasks WHERE id = ? AND (owner_id = ? OR creator_id = ?)",
-                (task_id, user["id"], user["id"]),
-            )
-            if result.rowcount == 0:
-                self.send_json({"error": "没有权限删除该任务"}, HTTPStatus.FORBIDDEN)
+            task = conn.execute("SELECT id, creator_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if not task:
+                self.send_json({"error": "任务不存在"}, HTTPStatus.NOT_FOUND)
                 return
+            if not self.is_admin(user) and task["creator_id"] != user["id"]:
+                self.send_json({"error": "只有管理员或任务创建人可以删除该任务"}, HTTPStatus.FORBIDDEN)
+                return
+
+            conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
 
         self.send_json(
             {
