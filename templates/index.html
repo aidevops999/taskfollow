@@ -207,6 +207,21 @@
             <button type="button" id="clearTaskScope">清除</button>
           </div>
           <div class="task-list" id="taskList"></div>
+          <div class="pagination-bar hidden" id="taskPagination">
+            <span id="taskPaginationSummary"></span>
+            <div class="pagination-actions">
+              <label>每页
+                <select id="taskPageSize">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <button type="button" id="prevTaskPage">上一页</button>
+              <span id="taskPageText"></span>
+              <button type="button" id="nextTaskPage">下一页</button>
+            </div>
+          </div>
         </section>
       </section>
 

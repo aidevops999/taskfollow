@@ -16,6 +16,8 @@ const state = {
   dueStart: "",
   dueEnd: "",
   search: "",
+  taskPage: 1,
+  taskPageSize: 10,
 };
 
 const taskTypeLabel = {
@@ -364,6 +366,7 @@ async function showWeekTasks(row) {
   if (!state.selectedOwnerId) {
     state.selectedOwnerName = "我的任务";
   }
+  resetTaskPage();
   await refreshTasks();
   document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -393,6 +396,7 @@ async function showSideScope(scope) {
   }
 
   syncFilterButtons();
+  resetTaskPage();
   await refreshTasks();
   document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -422,6 +426,7 @@ async function showMonthScope(scope) {
   }
 
   syncFilterButtons();
+  resetTaskPage();
   await refreshTasks();
   document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -526,6 +531,7 @@ async function showOverviewTasks(button) {
   }
 
   syncFilterButtons();
+  resetTaskPage();
   await refreshTasks();
   document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -690,15 +696,64 @@ function canDeleteTask(task) {
   return state.user && (state.user.role === "admin" || String(task.creator_id) === String(state.user.id));
 }
 
+function taskPageCount() {
+  return Math.max(1, Math.ceil(state.tasks.length / state.taskPageSize));
+}
+
+function clampTaskPage() {
+  state.taskPage = Math.min(Math.max(1, state.taskPage), taskPageCount());
+}
+
+function pagedTasks() {
+  clampTaskPage();
+  const start = (state.taskPage - 1) * state.taskPageSize;
+  return state.tasks.slice(start, start + state.taskPageSize);
+}
+
+function resetTaskPage() {
+  state.taskPage = 1;
+}
+
+function renderTaskPagination() {
+  const bar = document.querySelector("#taskPagination");
+  const summary = document.querySelector("#taskPaginationSummary");
+  const pageText = document.querySelector("#taskPageText");
+  const prev = document.querySelector("#prevTaskPage");
+  const next = document.querySelector("#nextTaskPage");
+  const pageSize = document.querySelector("#taskPageSize");
+  if (!bar || !summary || !pageText || !prev || !next || !pageSize) return;
+
+  pageSize.value = String(state.taskPageSize);
+  if (!state.tasks.length) {
+    bar.classList.add("hidden");
+    summary.textContent = "";
+    pageText.textContent = "";
+    return;
+  }
+
+  clampTaskPage();
+  const total = state.tasks.length;
+  const start = (state.taskPage - 1) * state.taskPageSize + 1;
+  const end = Math.min(total, state.taskPage * state.taskPageSize);
+  const pages = taskPageCount();
+
+  bar.classList.remove("hidden");
+  summary.textContent = `显示 ${start}-${end} 条，共 ${total} 条`;
+  pageText.textContent = `${state.taskPage} / ${pages}`;
+  prev.disabled = state.taskPage <= 1;
+  next.disabled = state.taskPage >= pages;
+}
+
 function renderTasks() {
   const list = document.querySelector("#taskList");
   renderExportCount();
+  renderTaskPagination();
   if (!state.tasks.length) {
     list.innerHTML = '<div class="empty">当前没有分配给你的任务。</div>';
     return;
   }
 
-  list.innerHTML = state.tasks.map((task) => `
+  list.innerHTML = pagedTasks().map((task) => `
     <article class="task-card ${taskClass(task)}" data-task-id="${task.id}" tabindex="0" role="button" aria-label="查看任务明细：${escapeHtml(task.title)}">
       <div>
         <div class="task-head">
@@ -894,14 +949,31 @@ document.querySelector("#showReminderPage").addEventListener("click", showRemind
 const taskSearch = document.querySelector("#taskSearch");
 taskSearch.addEventListener("input", async (event) => {
   state.search = event.target.value.trim();
+  resetTaskPage();
   await refreshTasks();
 });
 document.querySelector("#clearTaskSearch").addEventListener("click", async () => {
   state.search = "";
   taskSearch.value = "";
+  resetTaskPage();
   await refreshTasks();
 });
 document.querySelector("#exportDoingTasks").addEventListener("click", exportDoingTasks);
+document.querySelector("#prevTaskPage").addEventListener("click", () => {
+  state.taskPage -= 1;
+  renderTasks();
+  document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
+});
+document.querySelector("#nextTaskPage").addEventListener("click", () => {
+  state.taskPage += 1;
+  renderTasks();
+  document.querySelector("#taskList").scrollIntoView({ block: "start", behavior: "smooth" });
+});
+document.querySelector("#taskPageSize").addEventListener("change", (event) => {
+  state.taskPageSize = Number.parseInt(event.target.value, 10) || 10;
+  resetTaskPage();
+  renderTasks();
+});
 
 const passwordDialog = document.querySelector("#passwordDialog");
 const passwordForm = document.querySelector("#passwordForm");
@@ -935,6 +1007,7 @@ document.querySelector(".filters").addEventListener("click", async (event) => {
     if (state.selectedOwnerId) state.selectedScopeLabel = "当前筛选";
   }
 
+  resetTaskPage();
   syncFilterButtons();
   await refreshTasks();
 });
@@ -990,6 +1063,7 @@ document.querySelector("#clearTaskScope").addEventListener("click", async () => 
   state.type = "all";
   state.status = "all";
   state.delayedOnly = false;
+  resetTaskPage();
   syncFilterButtons();
   await refreshTasks();
 });

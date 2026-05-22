@@ -737,6 +737,45 @@ code {
   padding: 18px;
 }
 
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pagination-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination-actions select {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 4px 8px;
+}
+
+.pagination-actions button {
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
 .task-card {
   position: relative;
   display: grid;
@@ -1081,8 +1120,14 @@ dialog::backdrop {
   }
 
   .filters,
-  .top-actions {
+  .top-actions,
+  .pagination-actions {
     justify-content: flex-start;
+  }
+
+  .pagination-bar {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
