@@ -191,6 +191,7 @@ def init_db() -> None:
               remind_days INTEGER NOT NULL DEFAULT 15,
               note TEXT NOT NULL DEFAULT '',
               status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
+              task_id INTEGER,
               completed_at TEXT,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -284,6 +285,8 @@ def ensure_reminder_columns(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(reminders)").fetchall()}
     if "remind_days" not in columns:
         conn.execute("ALTER TABLE reminders ADD COLUMN remind_days INTEGER NOT NULL DEFAULT 15")
+    if "task_id" not in columns:
+        conn.execute("ALTER TABLE reminders ADD COLUMN task_id INTEGER")
 
 
 def migrate_task_type_schema(conn: sqlite3.Connection) -> None:
@@ -461,6 +464,14 @@ class AppHandler(BaseHTTPRequestHandler):
             if not user:
                 return
             self.create_reminder(user)
+            return
+
+        reminder_task_id = self.reminder_task_id_from_path(parsed.path)
+        if reminder_task_id is not None:
+            user = self.require_user()
+            if not user:
+                return
+            self.convert_reminder_to_task(user, reminder_task_id)
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
@@ -825,6 +836,12 @@ class AppHandler(BaseHTTPRequestHandler):
             return int(parts[2])
         return None
 
+    def reminder_task_id_from_path(self, path: str) -> int | None:
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "reminders"] and parts[2].isdigit() and parts[3] == "task":
+            return int(parts[2])
+        return None
+
     def create_reminder(self, user: sqlite3.Row) -> None:
         payload = self.read_json()
         title = str(payload.get("title", "")).strip()
@@ -856,6 +873,55 @@ class AppHandler(BaseHTTPRequestHandler):
             )
 
         self.send_json({"reminders": self.fetch_reminders(user["id"])}, HTTPStatus.CREATED)
+
+    def convert_reminder_to_task(self, user: sqlite3.Row, reminder_id: int) -> None:
+        with get_connection() as conn:
+            reminder = conn.execute(
+                "SELECT * FROM reminders WHERE id = ? AND user_id = ?",
+                (reminder_id, user["id"]),
+            ).fetchone()
+            if not reminder:
+                self.send_json({"error": "提醒不存在或没有权限"}, HTTPStatus.NOT_FOUND)
+                return
+            if reminder["task_id"]:
+                self.send_json({"error": "该提醒已经转为任务"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            description_parts = ["由提醒备忘转入任务。"]
+            if reminder["note"]:
+                description_parts.append(f"备忘备注：{reminder['note']}")
+            task_type = "week"
+            conn.execute(
+                """
+                INSERT INTO tasks
+                (title, task_type, status, owner_id, creator_id, follower, due_at, priority, description)
+                VALUES (?, ?, 'todo', ?, ?, ?, ?, 'medium', ?)
+                """,
+                (
+                    reminder["title"],
+                    task_type,
+                    user["id"],
+                    user["id"],
+                    user["display_name"],
+                    reminder["due_at"],
+                    "\n".join(description_parts),
+                ),
+            )
+            task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "UPDATE reminders SET task_id = ?, updated_at = ? WHERE id = ?",
+                (task_id, iso_now(), reminder_id),
+            )
+
+        self.send_json(
+            {
+                "reminders": self.fetch_reminders(user["id"]),
+                "tasks": self.fetch_tasks(user["id"], ""),
+                "stats": self.fetch_stats(user["id"]),
+                "monthly": self.fetch_monthly_stats(user["id"], ""),
+            },
+            HTTPStatus.CREATED,
+        )
 
     def update_reminder(self, user: sqlite3.Row, reminder_id: int) -> None:
         payload = self.read_json()

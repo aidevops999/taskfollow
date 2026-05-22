@@ -178,6 +178,9 @@ const api = {
   async deleteReminder(id) {
     return request(`/api/reminders/${id}`, { method: "DELETE" });
   },
+  async convertReminderToTask(id) {
+    return request(`/api/reminders/${id}/task`, { method: "POST" });
+  },
   async updateUserRole(payload) {
     return request("/api/users/role", { method: "POST", body: payload });
   },
@@ -357,9 +360,11 @@ function renderReminders() {
           <span>截止：${escapeHtml(reminder.due_at)}</span>
           <span>提醒日：${escapeHtml(reminder.remind_at)}</span>
           <span>提前 ${escapeHtml(reminder.remind_days || 15)} 天</span>
+          ${reminder.task_id ? `<span>已转任务 #${escapeHtml(reminder.task_id)}</span>` : ""}
         </div>
       </div>
       <div class="task-actions">
+        ${!reminder.task_id && reminder.status !== "done" ? `<button data-reminder-action="task" data-id="${reminder.id}">转为任务</button>` : ""}
         ${reminder.status !== "done" ? `<button data-reminder-action="done" data-id="${reminder.id}">完成</button>` : `<button data-reminder-action="open" data-id="${reminder.id}">重新打开</button>`}
         <button data-reminder-action="delete" data-id="${reminder.id}">删除</button>
       </div>
@@ -1331,6 +1336,16 @@ document.querySelector("#reminderList").addEventListener("click", async (event) 
     if (button.dataset.reminderAction === "delete") {
       data = await api.deleteReminder(button.dataset.id);
       showToast("提醒已删除");
+    } else if (button.dataset.reminderAction === "task") {
+      data = await api.convertReminderToTask(button.dataset.id);
+      state.tasks = data.tasks || state.tasks;
+      state.stats = data.stats || state.stats;
+      state.monthly = data.monthly || state.monthly;
+      renderStats();
+      renderMonthly();
+      renderTodayBoard();
+      renderTasks();
+      showToast("已转为任务，提醒仍保留");
     } else {
       data = await api.updateReminder(button.dataset.id, { status: button.dataset.reminderAction });
       showToast("提醒状态已更新");
