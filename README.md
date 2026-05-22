@@ -74,31 +74,50 @@ http://127.0.0.1:8000
 - `POST /api/users/role`：管理员修改用户权限
 - `POST /api/users/delete`：管理员停用/删除用户，保留历史任务
 
-## 数据库备份
+## 服务器脚本
 
-每次运行 `scripts/update_server.sh` 更新代码前，会自动备份一次 `data/sop.db` 到 `data/backups/`。
-
-如果希望服务器每周自动备份一次，并只保留最近 7 天内的备份，可以在服务器项目目录执行：
+服务器上统一使用一个入口脚本：
 
 ```bash
-chmod +x scripts/backup_database.sh scripts/install_backup_timer.sh
-./scripts/install_backup_timer.sh
+./scripts/taskfollow.sh help
 ```
 
-默认备份时间是每周日 03:30，备份文件保存到：
+常用命令：
+
+```bash
+./scripts/taskfollow.sh update
+./scripts/taskfollow.sh restart
+./scripts/taskfollow.sh backup
+./scripts/taskfollow.sh install-backup-timer
+./scripts/taskfollow.sh status
+```
+
+`update` 会先备份 `data/sop.db`，再询问是否拉取 GitHub 最新代码，最后询问是否重启 systemd 服务。数据库和备份都放在 `data/` 目录下，不会被 Git 覆盖。
+
+## 数据库备份
+
+立即备份一次：
+
+```bash
+./scripts/taskfollow.sh backup
+```
+
+备份文件保存到：
 
 ```text
 data/backups/sop-年月日-时分秒.db
 ```
 
-可以手动测试一次：
+安装每周自动备份，并只保留最近 7 天内的备份：
 
 ```bash
-./scripts/backup_database.sh
+./scripts/taskfollow.sh install-backup-timer
 ```
 
-如果要改备份时间或保留天数，可以这样安装：
+如果之前安装过旧版备份定时器，拉取这次更新后也执行一次上面的命令，它会把 systemd 定时器更新为新的统一脚本入口。
+
+默认备份时间是每周日 03:30。如果要改备份时间或保留天数，可以这样安装：
 
 ```bash
-RUN_CALENDAR="Mon *-*-* 02:00:00" RETENTION_DAYS=7 ./scripts/install_backup_timer.sh
+RUN_CALENDAR="Mon *-*-* 02:00:00" RETENTION_DAYS=7 ./scripts/taskfollow.sh install-backup-timer
 ```
