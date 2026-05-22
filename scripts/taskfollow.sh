@@ -220,6 +220,11 @@ Commands:
   status                 查看应用服务和备份定时器状态
   help                   显示帮助
 
+Notes:
+  服务器拉取包含统一脚本的更新后，如果之前装过旧版备份定时器，
+  请执行一次：./scripts/taskfollow.sh install-backup-timer
+  这样 systemd 定时器会改为新的统一脚本入口。
+
 Common env:
   APP_PORT=8001
   SERVICE_NAME=taskfollow
