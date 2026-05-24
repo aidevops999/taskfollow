@@ -1149,6 +1149,7 @@ class AppHandler(BaseHTTPRequestHandler):
         task_type = filters.get("type", ["all"])[0]
         keyword = filters.get("q", [""])[0].strip()
         delayed_only = filters.get("delayed", ["0"])[0] == "1"
+        priority = filters.get("priority", ["all"])[0]
         due_start = self.clean_due_date(filters.get("due_start", [""])[0])
         due_end = self.clean_due_date(filters.get("due_end", [""])[0])
         clauses = ["tasks.owner_id = ?"]
@@ -1165,6 +1166,9 @@ class AppHandler(BaseHTTPRequestHandler):
             clauses.append("(tasks.title LIKE ? OR tasks.description LIKE ? OR tasks.work_note LIKE ? OR tasks.issue_note LIKE ? OR tasks.delay_reason LIKE ?)")
             like = f"%{keyword}%"
             values.extend([like, like, like, like, like])
+        if priority in {"high", "medium", "low"}:
+            clauses.append("tasks.priority = ?")
+            values.append(priority)
         if delayed_only:
             clauses.append("tasks.status != 'done'")
             clauses.append("tasks.due_at IS NOT NULL")

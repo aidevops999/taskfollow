@@ -9,6 +9,7 @@ const state = {
   type: "all",
   delayedOnly: false,
   status: "all",
+  priority: "all",
   month: new Date().toISOString().slice(0, 7),
   selectedOwnerId: null,
   selectedOwnerName: "",
@@ -141,6 +142,7 @@ const api = {
     const params = new URLSearchParams({
       type: state.type,
       status: state.status,
+      priority: state.priority,
       delayed: state.delayedOnly ? "1" : "0",
       month: state.month,
     });
@@ -441,6 +443,7 @@ async function showSideScope(scope) {
   };
   state.type = "all";
   state.status = "all";
+  state.priority = "all";
   state.delayedOnly = false;
   state.dueStart = "";
   state.dueEnd = "";
@@ -471,6 +474,7 @@ async function showMonthScope(scope) {
   const range = monthRange(state.month);
   state.type = "all";
   state.status = "all";
+  state.priority = "all";
   state.delayedOnly = false;
   state.dueStart = range.start;
   state.dueEnd = range.end;
@@ -557,6 +561,9 @@ function syncFilterButtons() {
   document.querySelectorAll("[data-status]").forEach((item) => {
     item.classList.toggle("active", item.dataset.status === state.status);
   });
+  document.querySelectorAll("[data-priority]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.priority === state.priority);
+  });
 }
 
 async function showOverviewTasks(button) {
@@ -578,6 +585,7 @@ async function showOverviewTasks(button) {
   state.dueEnd = "";
   state.type = "all";
   state.status = "all";
+  state.priority = "all";
   state.delayedOnly = false;
 
   if (metric === "week" || metric === "month" || metric === "year") {
@@ -677,13 +685,14 @@ function taskActionHint(task) {
 
 function rolloverButton(task) {
   if (task.status === "done") return "";
+  const custom = `<button data-action="postpone-custom" data-id="${task.id}">自定义顺延</button>`;
   if (task.task_type === "week") {
-    return `<button data-action="rollover-week" data-id="${task.id}">顺延下周</button>`;
+    return `<button data-action="rollover-week" data-id="${task.id}">顺延下周</button>${custom}`;
   }
   if (task.task_type === "month") {
-    return `<button data-action="rollover-month" data-id="${task.id}">顺延下月</button>`;
+    return `<button data-action="rollover-month" data-id="${task.id}">顺延下月</button>${custom}`;
   }
-  return "";
+  return custom;
 }
 
 function noteBlock(title, value, extraClass = "") {
@@ -1100,6 +1109,11 @@ document.querySelector(".filters").addEventListener("click", async (event) => {
     if (state.selectedOwnerId) state.selectedScopeLabel = "当前筛选";
   }
 
+  if (button.dataset.priority) {
+    state.priority = state.priority === button.dataset.priority ? "all" : button.dataset.priority;
+    state.selectedScopeLabel = priorityLabel[state.priority] ? `${priorityLabel[state.priority]}优先级任务` : state.selectedScopeLabel;
+  }
+
   resetTaskPage();
   syncFilterButtons();
   await refreshTasks();
@@ -1161,6 +1175,7 @@ document.querySelector("#clearTaskScope").addEventListener("click", async () => 
   state.dueEnd = "";
   state.type = "all";
   state.status = "all";
+  state.priority = "all";
   state.delayedOnly = false;
   resetTaskPage();
   syncFilterButtons();
@@ -1239,6 +1254,9 @@ document.querySelector("#taskList").addEventListener("click", async (event) => {
         delay_reason: task.delay_reason || (isWeekRollover ? "本周未完成，顺延到下周继续处理。" : "本月未完成，顺延到下个月继续处理。"),
       });
       showToast(`已顺延到 ${nextDueAt}`);
+    } else if (button.dataset.action === "postpone-custom") {
+      openPostponeDialog(button.dataset.id);
+      return;
     } else if (button.dataset.action === "delete") {
       await api.deleteTask(button.dataset.id);
       showToast("任务已删除");
@@ -1258,6 +1276,49 @@ document.querySelector("#taskList").addEventListener("keydown", (event) => {
   if (!card) return;
   event.preventDefault();
   openTaskDetail(card.dataset.taskId);
+});
+
+
+const postponeDialog = document.querySelector("#postponeDialog");
+const postponeForm = document.querySelector("#postponeForm");
+
+function openPostponeDialog(taskId) {
+  const task = state.tasks.find((item) => String(item.id) === String(taskId));
+  if (!task) return;
+  setDateLimits();
+  document.querySelector("#postponeTaskId").value = task.id;
+  document.querySelector("#postponeDueAt").value = task.due_at || todayISO();
+  document.querySelector("#postponeDelayReason").value = task.delay_reason || "";
+  postponeDialog.showModal();
+}
+
+document.querySelector("#closePostponeDialog").addEventListener("click", () => postponeDialog.close());
+document.querySelector("#cancelPostpone").addEventListener("click", () => postponeDialog.close());
+
+postponeForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setDateLimits();
+  const payload = formPayload(postponeForm);
+  const taskId = payload.task_id;
+  delete payload.task_id;
+  payload.delay_reason = String(payload.delay_reason || "").trim();
+  if (!payload.delay_reason) {
+    showToast("请填写顺延原因");
+    return;
+  }
+  const task = state.tasks.find((item) => String(item.id) === String(taskId));
+  if (task) {
+    payload.status = task.status === "todo" ? "todo" : "doing";
+  }
+  try {
+    await api.updateTask(taskId, payload);
+    postponeForm.reset();
+    postponeDialog.close();
+    showToast("任务已顺延");
+    await refreshTasks();
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
 const progressDialog = document.querySelector("#progressDialog");

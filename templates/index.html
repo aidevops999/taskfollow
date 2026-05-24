@@ -180,6 +180,9 @@
               <button data-status="todo">待处理</button>
               <button data-status="doing">进行中</button>
               <button data-status="done">已完成</button>
+              <button data-priority="high">高优先级</button>
+              <button data-priority="medium">中优先级</button>
+              <button data-priority="low">低优先级</button>
             </div>
           </div>
           <form class="quick-add" id="quickTaskForm">
@@ -425,6 +428,29 @@
       <div class="dialog-actions">
         <button type="button" id="cancelProgress">取消</button>
         <button class="primary" type="submit">保存进展</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="postponeDialog">
+    <form class="dialog-card" id="postponeForm">
+      <div class="dialog-header">
+        <h2>自定义顺延</h2>
+        <button type="button" class="icon-button" id="closePostponeDialog">×</button>
+      </div>
+      <input type="hidden" name="task_id" id="postponeTaskId">
+      <label>
+        新计划完成时间
+        <input name="due_at" id="postponeDueAt" type="date" required>
+      </label>
+      <label>
+        顺延原因
+        <textarea name="delay_reason" id="postponeDelayReason" rows="4" required placeholder="例如：客户资料未到齐，预计下周三前补充完成"></textarea>
+      </label>
+      <div class="locked-note">顺延会更新计划完成时间，并把原因写入任务延期原因和操作记录。</div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelPostpone">取消</button>
+        <button class="primary" type="submit">确认顺延</button>
       </div>
     </form>
   </dialog>
