@@ -426,6 +426,18 @@ class AppHandler(BaseHTTPRequestHandler):
             )
             return
 
+        task_id = self.task_id_from_path(path)
+        if task_id is not None:
+            user = self.require_user()
+            if not user:
+                return
+            task = self.fetch_task_with_detail(task_id, user)
+            if not task:
+                self.send_json({"error": "任务不存在或没有权限"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_json({"task": task})
+            return
+
         if path == "/api/reminders":
             user = self.require_user()
             if not user:
@@ -1064,9 +1076,32 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_json({"reminders": self.fetch_reminders(user["id"])})
 
     def fetch_task_detail(self, task_id: int, user: sqlite3.Row) -> dict | None:
+        detail = self.fetch_task_with_detail(task_id, user)
+        if not detail:
+            return None
+        return {"comments": detail["comments"], "logs": detail["logs"]}
+
+    def fetch_task_with_detail(self, task_id: int, user: sqlite3.Row) -> dict | None:
+        today = utc_now().date().isoformat()
         with get_connection() as conn:
-            task = self.task_accessible(conn, task_id, user)
+            task = conn.execute(
+                """
+                SELECT
+                  tasks.*,
+                  owner.display_name AS owner_name,
+                  creator.display_name AS creator_name,
+                  (SELECT COUNT(*) FROM task_comments WHERE task_comments.task_id = tasks.id) AS comment_count,
+                  (SELECT COUNT(*) FROM task_logs WHERE task_logs.task_id = tasks.id) AS log_count
+                FROM tasks
+                JOIN users owner ON owner.id = tasks.owner_id
+                JOIN users creator ON creator.id = tasks.creator_id
+                WHERE tasks.id = ?
+                """,
+                (task_id,),
+            ).fetchone()
             if not task:
+                return None
+            if not (self.is_admin(user) or task["owner_id"] == user["id"] or task["creator_id"] == user["id"]):
                 return None
             comments = conn.execute(
                 """
@@ -1089,10 +1124,11 @@ class AppHandler(BaseHTTPRequestHandler):
                 """,
                 (task_id,),
             ).fetchall()
-        return {
-            "comments": [row_to_dict(row) for row in comments],
-            "logs": [row_to_dict(row) for row in logs],
-        }
+        item = row_to_dict(task)
+        item["is_delayed"] = bool(item["status"] != "done" and item["due_at"] and item["due_at"] < today)
+        item["comments"] = [row_to_dict(row) for row in comments]
+        item["logs"] = [row_to_dict(row) for row in logs]
+        return item
 
     def fetch_reminders(self, user_id: int) -> list[dict]:
         today_date = utc_now().date()
@@ -1183,14 +1219,15 @@ class AppHandler(BaseHTTPRequestHandler):
             clauses.append("tasks.due_at <= ?")
             values.append(due_end)
 
-        current_user = self.current_user()
         with get_connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT
                   tasks.*,
                   owner.display_name AS owner_name,
-                  creator.display_name AS creator_name
+                  creator.display_name AS creator_name,
+                  (SELECT COUNT(*) FROM task_comments WHERE task_comments.task_id = tasks.id) AS comment_count,
+                  (SELECT COUNT(*) FROM task_logs WHERE task_logs.task_id = tasks.id) AS log_count
                 FROM tasks
                 JOIN users owner ON owner.id = tasks.owner_id
                 JOIN users creator ON creator.id = tasks.creator_id
@@ -1221,9 +1258,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 and task["due_at"]
                 and task["due_at"] < today
             )
-            detail = self.fetch_task_detail(task["id"], current_user) if current_user else None
-            task["comments"] = detail["comments"] if detail else []
-            task["logs"] = detail["logs"] if detail else []
+            task["comments"] = []
+            task["logs"] = []
             tasks.append(task)
         return tasks
 

@@ -166,6 +166,9 @@ const api = {
   async updateTask(id, payload) {
     return request(`/api/tasks/${id}`, { method: "PATCH", body: payload });
   },
+  async taskDetail(id) {
+    return request(`/api/tasks/${id}`);
+  },
   async deleteTask(id) {
     return request(`/api/tasks/${id}`, { method: "DELETE" });
   },
@@ -314,6 +317,29 @@ function isThisWeek(task) {
   return due >= start && due <= end;
 }
 
+function daysUntilDue(task) {
+  if (!task.due_at) return 9999;
+  const today = new Date(`${todayISO()}T00:00:00`);
+  const due = new Date(`${task.due_at}T00:00:00`);
+  return Math.round((due - today) / 86400000);
+}
+
+function todayFocusTasks() {
+  const priorityScore = { high: 0, medium: 1, low: 2 };
+  return state.tasks
+    .filter((task) => task.status !== "done")
+    .slice()
+    .sort((a, b) => {
+      if (a.is_delayed !== b.is_delayed) return a.is_delayed ? -1 : 1;
+      const urgentDiff = Number(isUrgent(b)) - Number(isUrgent(a));
+      if (urgentDiff) return urgentDiff;
+      const priorityDiff = (priorityScore[a.priority] ?? 1) - (priorityScore[b.priority] ?? 1);
+      if (priorityDiff) return priorityDiff;
+      return daysUntilDue(a) - daysUntilDue(b);
+    })
+    .slice(0, 5);
+}
+
 function renderTodayBoard() {
   const board = document.querySelector("#todayBoard");
   if (!board) return;
@@ -321,11 +347,21 @@ function renderTodayBoard() {
   const weekOpen = state.tasks.filter(isThisWeek).length;
   const urgentReminders = state.reminders.filter((item) => item.status === "open" && (item.is_due_soon || item.is_overdue)).length;
   const convertedOpen = state.reminders.filter((item) => item.task_id && item.linked_task_status !== "done").length;
+  const focusTasks = todayFocusTasks();
   board.innerHTML = `
     <button type="button" data-today-scope="delayed"><b>${delayed}</b><span>延期待处理</span></button>
     <button type="button" data-today-scope="week"><b>${weekOpen}</b><span>本周未完成</span></button>
     <button type="button" data-today-scope="reminders"><b>${urgentReminders}</b><span>提醒需关注</span></button>
     <button type="button" data-today-scope="converted-reminders"><b>${convertedOpen}</b><span>已转任务未完成</span></button>
+    <div class="today-focus">
+      <strong>今日重点</strong>
+      ${focusTasks.length ? focusTasks.map((task) => `
+        <button type="button" class="focus-task" data-focus-task="${task.id}">
+          <span>${escapeHtml(task.title)}</span>
+          <small>${task.is_delayed ? "已延期" : `${escapeHtml(dueText(task))}`} · ${escapeHtml(priorityLabel[task.priority] || "中")}</small>
+        </button>
+      `).join("") : '<p>暂无需要优先处理的任务。</p>'}
+    </div>
   `;
 }
 
@@ -874,6 +910,8 @@ function renderTasks() {
           <span>${escapeHtml(dueText(task))}</span>
           <span>跟进人：${escapeHtml(task.follower || "未填写")}</span>
           <span>创建人：${escapeHtml(task.creator_name)}</span>
+          <span>跟进 ${escapeHtml(task.comment_count || 0)} 条</span>
+          <span>记录 ${escapeHtml(task.log_count || 0)} 条</span>
         </div>
       </div>
       <div class="task-actions">
@@ -1126,6 +1164,11 @@ document.querySelector(".stats").addEventListener("click", async (event) => {
 });
 
 document.querySelector("#todayBoard").addEventListener("click", async (event) => {
+  const focusButton = event.target.closest("button[data-focus-task]");
+  if (focusButton) {
+    await openTaskDetail(focusButton.dataset.focusTask);
+    return;
+  }
   const button = event.target.closest("button[data-today-scope]");
   if (!button) return;
   if (button.dataset.todayScope === "reminders") {
@@ -1231,14 +1274,14 @@ document.querySelector("#taskList").addEventListener("click", async (event) => {
   if (!button) {
     const card = event.target.closest(".task-card[data-task-id]");
     if (card) {
-      openTaskDetail(card.dataset.taskId);
+      await openTaskDetail(card.dataset.taskId);
     }
     return;
   }
 
   try {
     if (button.dataset.action === "detail") {
-      openTaskDetail(button.dataset.id);
+      await openTaskDetail(button.dataset.id);
       return;
     } else if (button.dataset.action === "edit") {
       openProgressDialog(button.dataset.id);
@@ -1270,12 +1313,12 @@ document.querySelector("#taskList").addEventListener("click", async (event) => {
   }
 });
 
-document.querySelector("#taskList").addEventListener("keydown", (event) => {
+document.querySelector("#taskList").addEventListener("keydown", async (event) => {
   if (event.key !== "Enter" && event.key !== " ") return;
   const card = event.target.closest(".task-card[data-task-id]");
   if (!card) return;
   event.preventDefault();
-  openTaskDetail(card.dataset.taskId);
+  await openTaskDetail(card.dataset.taskId);
 });
 
 
@@ -1349,14 +1392,7 @@ function closeTaskDetail() {
   clearTaskHash();
 }
 
-function openTaskDetail(taskId, options = {}) {
-  const syncHash = options.syncHash !== false;
-  const task = state.tasks.find((item) => String(item.id) === String(taskId));
-  if (!task) return;
-  if (syncHash) {
-    setTaskHash(task.id);
-  }
-
+function renderTaskDetail(task) {
   document.querySelector("#detailTitle").textContent = task.title;
   document.querySelector("#detailBody").innerHTML = `
     <div class="detail-grid">
@@ -1380,7 +1416,30 @@ function openTaskDetail(taskId, options = {}) {
   document.querySelector("#taskComments").innerHTML = renderTaskComments(task);
   document.querySelector("#taskLogs").innerHTML = renderTaskLogs(task);
   document.querySelector("#detailEditBtn").dataset.id = task.id;
+}
+
+async function openTaskDetail(taskId, options = {}) {
+  const syncHash = options.syncHash !== false;
+  const task = state.tasks.find((item) => String(item.id) === String(taskId));
+  if (!task) return;
+  if (syncHash) {
+    setTaskHash(task.id);
+  }
+
+  renderTaskDetail(task);
+  document.querySelector("#taskComments").innerHTML = '<div class="empty small-empty">正在加载跟进记录...</div>';
+  document.querySelector("#taskLogs").innerHTML = '<div class="empty small-empty">正在加载操作记录...</div>';
   detailDialog.showModal();
+
+  try {
+    const data = await api.taskDetail(task.id);
+    Object.assign(task, data.task || {});
+    renderTaskDetail(task);
+  } catch (error) {
+    document.querySelector("#taskComments").innerHTML = '<div class="empty small-empty">明细加载失败。</div>';
+    document.querySelector("#taskLogs").innerHTML = '';
+    showToast(error.message);
+  }
 }
 
 window.addEventListener("hashchange", openTaskFromHash);

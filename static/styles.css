@@ -386,6 +386,48 @@ code {
   font-size: 20px;
 }
 
+.today-focus {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.today-focus strong {
+  font-size: 13px;
+}
+
+.today-focus p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.today-focus .focus-task {
+  display: grid;
+  gap: 3px;
+  align-items: start;
+  justify-content: stretch;
+  min-height: 0;
+  padding: 9px;
+  text-align: left;
+  background: var(--soft);
+}
+
+.today-focus .focus-task span {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.today-focus .focus-task small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
