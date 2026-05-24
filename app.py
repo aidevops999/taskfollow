@@ -220,6 +220,13 @@ def init_db() -> None:
               FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE INDEX IF NOT EXISTS idx_tasks_owner_status_due ON tasks(owner_id, status, due_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_owner_type_due ON tasks(owner_id, task_type, due_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_owner_priority_due ON tasks(owner_id, priority, due_at);
+            CREATE INDEX IF NOT EXISTS idx_task_comments_task_created ON task_comments(task_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_task_logs_task_created ON task_logs(task_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_reminders_user_status_due ON reminders(user_id, status, due_at);
             """
         )
         ensure_task_columns(conn)
