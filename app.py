@@ -390,7 +390,11 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/static/"):
-            self.send_file(STATIC_DIR / path.removeprefix("/static/"))
+            static_target = (STATIC_DIR / path.removeprefix("/static/")).resolve()
+            if not static_target.is_relative_to(STATIC_DIR.resolve()):
+                self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+                return
+            self.send_file(static_target)
             return
 
         if path == "/api/me":
@@ -885,8 +889,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return
 
         with get_connection() as conn:
-            if not conn.execute("SELECT 1 FROM users WHERE id = ?", (owner_id,)).fetchone():
-                self.send_json({"error": "负责人不存在"}, HTTPStatus.BAD_REQUEST)
+            if not conn.execute("SELECT 1 FROM users WHERE id = ? AND is_active = 1", (owner_id,)).fetchone():
+                self.send_json({"error": "负责人不存在或已删除"}, HTTPStatus.BAD_REQUEST)
                 return
             conn.execute(
                 """
