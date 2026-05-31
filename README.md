@@ -13,10 +13,10 @@
 python3 app.py
 ```
 
-如果 8000 端口被占用，可以指定端口：
+默认端口是 8002。如果端口被占用，可以指定其他端口：
 
 ```bash
-python3 app.py 8001
+python3 app.py 8003
 ```
 
 如果系统 Python 被 Xcode 工具链拦住，可以使用 Codex 内置 Python：
@@ -28,7 +28,7 @@ python3 app.py 8001
 浏览器打开：
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8002
 ```
 
 首次启动会自动创建默认账号：

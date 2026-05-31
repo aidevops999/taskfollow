@@ -1571,7 +1571,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     init_db()
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8002
     server = ThreadingHTTPServer(("127.0.0.1", port), AppHandler)
     print(f"小团队任务 SOP 系统已启动：http://127.0.0.1:{port}")
     print("按 Ctrl+C 停止服务")

@@ -6,7 +6,7 @@ BRANCH="${BRANCH:-main}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 SERVICE_NAME="${SERVICE_NAME:-taskfollow}"
 SERVICE_USER="${SERVICE_USER:-$(id -un)}"
-APP_PORT="${APP_PORT:-8001}"
+APP_PORT="${APP_PORT:-8002}"
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
 RUN_CALENDAR="${RUN_CALENDAR:-Sun *-*-* 03:30:00}"
 BACKUP_SERVICE_NAME="${BACKUP_SERVICE_NAME:-taskfollow-backup}"
@@ -226,7 +226,7 @@ Notes:
   这样 systemd 定时器会改为新的统一脚本入口。
 
 Common env:
-  APP_PORT=8001
+  APP_PORT=8002
   SERVICE_NAME=taskfollow
   PYTHON_BIN=python3
   RETENTION_DAYS=7
