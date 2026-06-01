@@ -96,7 +96,7 @@ http://127.0.0.1:8002
 ./scripts/taskfollow.sh status
 ```
 
-`update` 会先备份 `data/sop.db`，再询问是否拉取 GitHub 最新代码，最后询问是否重启 systemd 服务。数据库和备份都放在 `data/` 目录下，不会被 Git 覆盖。
+`update` 会先备份 `data/sop.db`，备份后只保留最近 7 个备份文件，再询问是否拉取 GitHub 最新代码，最后询问是否重启 systemd 服务。数据库和备份都放在 `data/` 目录下，不会被 Git 覆盖。
 
 ## 数据库备份
 
@@ -112,7 +112,7 @@ http://127.0.0.1:8002
 data/backups/sop-年月日-时分秒.db
 ```
 
-安装每周自动备份，并只保留最近 7 天内的备份：
+安装每周自动备份，并只保留最近 7 个备份文件：
 
 ```bash
 ./scripts/taskfollow.sh install-backup-timer
@@ -120,8 +120,8 @@ data/backups/sop-年月日-时分秒.db
 
 如果之前安装过旧版备份定时器，拉取这次更新后也执行一次上面的命令，它会把 systemd 定时器更新为新的统一脚本入口。
 
-默认备份时间是每周日 03:30。如果要改备份时间或保留天数，可以这样安装：
+默认备份时间是每周日 03:30。如果要改备份时间或保留文件数量，可以这样安装：
 
 ```bash
-RUN_CALENDAR="Mon *-*-* 02:00:00" RETENTION_DAYS=7 ./scripts/taskfollow.sh install-backup-timer
+RUN_CALENDAR="Mon *-*-* 02:00:00" BACKUP_KEEP_FILES=7 ./scripts/taskfollow.sh install-backup-timer
 ```

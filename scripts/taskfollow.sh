@@ -7,7 +7,7 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 SERVICE_NAME="${SERVICE_NAME:-taskfollow}"
 SERVICE_USER="${SERVICE_USER:-$(id -un)}"
 APP_PORT="${APP_PORT:-8002}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+BACKUP_KEEP_FILES="${BACKUP_KEEP_FILES:-${RETENTION_DAYS:-7}}"
 RUN_CALENDAR="${RUN_CALENDAR:-Sun *-*-* 03:30:00}"
 BACKUP_SERVICE_NAME="${BACKUP_SERVICE_NAME:-taskfollow-backup}"
 DB_FILE="${DB_FILE:-$APP_DIR/data/sop.db}"
@@ -53,10 +53,16 @@ backup_database() {
   local backup_file="$BACKUP_DIR/sop-$(date +%Y%m%d-%H%M%S).db"
   cp "$DB_FILE" "$backup_file"
   chmod 600 "$backup_file" 2>/dev/null || true
-  find "$BACKUP_DIR" -type f -name 'sop-*.db' -mtime +"$RETENTION_DAYS" -delete
+  local backup_index=0
+  while IFS= read -r old_backup; do
+    backup_index=$((backup_index + 1))
+    if [ "$backup_index" -gt "$BACKUP_KEEP_FILES" ]; then
+      rm -f "$old_backup"
+    fi
+  done < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'sop-*.db' -print | sort -r)
 
   echo "==> Database backup created: $backup_file"
-  echo "==> Removed backups older than $RETENTION_DAYS days from: $BACKUP_DIR"
+  echo "==> Kept latest $BACKUP_KEEP_FILES backup files in: $BACKUP_DIR"
 }
 
 pull_code() {
@@ -134,7 +140,7 @@ install_backup_timer() {
 
   echo "==> Installing weekly database backup timer"
   echo "==> Schedule: $RUN_CALENDAR"
-  echo "==> Retention: $RETENTION_DAYS days"
+  echo "==> Keep latest backup files: $BACKUP_KEEP_FILES"
 
   sudo tee "$BACKUP_SERVICE_FILE" >/dev/null <<SERVICE_EOF
 [Unit]
@@ -144,7 +150,7 @@ Description=TaskFollow SQLite database backup
 Type=oneshot
 WorkingDirectory=$APP_DIR
 Environment=APP_DIR=$APP_DIR
-Environment=RETENTION_DAYS=$RETENTION_DAYS
+Environment=BACKUP_KEEP_FILES=$BACKUP_KEEP_FILES
 ExecStart=$APP_DIR/scripts/taskfollow.sh backup
 SERVICE_EOF
 
@@ -214,7 +220,7 @@ Usage: ./scripts/taskfollow.sh <command>
 Commands:
   update                 备份数据库，可选拉取代码，并可选重启服务
   restart                重启 systemd 服务，不拉代码
-  backup                 立即备份 data/sop.db，并删除 7 天前备份
+  backup                 立即备份 data/sop.db，并只保留最近 7 个备份文件
   install-service        创建/更新 taskfollow systemd 服务
   install-backup-timer   安装每周数据库备份定时器
   status                 查看应用服务和备份定时器状态
@@ -229,7 +235,7 @@ Common env:
   APP_PORT=8002
   SERVICE_NAME=taskfollow
   PYTHON_BIN=python3
-  RETENTION_DAYS=7
+  BACKUP_KEEP_FILES=7
   RUN_CALENDAR="Sun *-*-* 03:30:00"
 HELP
 }
